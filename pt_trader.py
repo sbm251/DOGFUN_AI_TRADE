@@ -676,6 +676,17 @@ if __name__ == "__main__":
                         except Exception:
                             pass
                     
+                    # Get trade_start_level setting (default: 2, previously defaulted to 3)
+                    # Reload each loop to get latest value
+                    trade_start_level = 2  # Default
+                    if os.path.exists(settings_path):
+                        try:
+                            with open(settings_path, 'r', encoding='utf-8') as f:
+                                settings = json.load(f)
+                                trade_start_level = int(settings.get("trade_start_level", 2))
+                        except Exception:
+                            pass
+                    
                     # Process each coin
                     for coin in coins:
                         if not coin or coin == "EUR":
@@ -763,6 +774,15 @@ if __name__ == "__main__":
                         
                         # Check if we should buy (LONG signal and price near a low level)
                         if long_signal > 0 and low_levels:
+                            # Trade Start Level: Price must be below at least N blue lines before trade starts
+                            # Count how many blue lines (low_levels) are above the current price
+                            # low_levels are sorted reverse (highest first), so count levels > current_price
+                            lines_above_price = sum(1 for level in low_levels if level > current_price)
+                            
+                            # Only proceed if price is below the required number of blue lines
+                            if lines_above_price < trade_start_level:
+                                continue  # Price not low enough yet, skip this coin
+                            
                             # Dynamic tolerance based on signal strength: L:7 = 10%, L:6 = 7%, L:5 = 5%, L:4 = 4%, L:3 = 3%, L:2-1 = 2%
                             max_tolerance = min(10.0, 2.0 + (long_signal * 1.2))  # L:7 = 10.4% (capped at 10%), L:6 = 9.2%, etc.
                             
@@ -821,7 +841,7 @@ if __name__ == "__main__":
                                                 try:
                                                     with open(trade_history_path, 'a', encoding='utf-8') as f:
                                                         f.write(json.dumps(trade_entry) + '\n')
-                                                    print(f"[TRADER] BUY {coin} at {current_price:.4f} EUR (signal: L{long_signal}, level: {level:.4f}, diff: {price_diff_pct:.2f}%, size: {trade_amount:.2f} EUR)")
+                                                    print(f"[TRADER] BUY {coin} at {current_price:.4f} EUR (signal: L{long_signal}, level: {level:.4f}, diff: {price_diff_pct:.2f}%, size: {trade_amount:.2f} EUR, start_level: {trade_start_level})")
                                                 except Exception:
                                                     pass
                                         except Exception as e:
@@ -834,7 +854,7 @@ if __name__ == "__main__":
                             coin_holding = next((h for h in holdings if h['asset'] == coin), None)
                             
                             if coin_holding and high_levels:
-                                # Calculate average cost basis from trade history for stop-loss
+                                # Calculate average cost basis from trade history (for profit-taking calculations)
                                 avg_cost = current_price  # Default to current price if no history
                                 try:
                                     if os.path.exists(trade_history_path):
@@ -849,46 +869,9 @@ if __name__ == "__main__":
                                 except Exception:
                                     pass
                                 
-                                # Stop-loss: Sell if loss > 5%
-                                current_loss_pct = ((current_price - avg_cost) / avg_cost) * 100 if avg_cost > 0 else 0
-                                if current_loss_pct <= -5.0:
-                                    try:
-                                        quantity = coin_holding['free']
-                                        if quantity > 0:
-                                            order = trader.place_sell_order(coin, quantity)
-                                            if order:
-                                                # Calculate average price from order response
-                                                executed_qty = float(order.get('executedQty', 0) or quantity)
-                                                cummulative_quote_qty = float(order.get('cummulativeQuoteQty', 0) or order.get('cummulativeFilledQuoteQty', 0) or 0)
-                                                if executed_qty > 0 and cummulative_quote_qty > 0:
-                                                    avg_price = cummulative_quote_qty / executed_qty
-                                                else:
-                                                    # Fallback: try fills array or use current price
-                                                    fills = order.get('fills', [])
-                                                    if fills and len(fills) > 0:
-                                                        total_cost = sum(float(f.get('price', 0)) * float(f.get('qty', 0)) for f in fills)
-                                                        total_qty = sum(float(f.get('qty', 0)) for f in fills)
-                                                        avg_price = (total_cost / total_qty) if total_qty > 0 else current_price
-                                                    else:
-                                                        avg_price = current_price
-                                                
-                                                trade_entry = {
-                                                    "ts": time.time(),
-                                                    "side": "sell",
-                                                    "symbol": coin,
-                                                    "quantity": executed_qty,
-                                                    "price": avg_price,
-                                                    "tag": "STOP_LOSS"
-                                                }
-                                                try:
-                                                    with open(trade_history_path, 'a', encoding='utf-8') as f:
-                                                        f.write(json.dumps(trade_entry) + '\n')
-                                                    print(f"[TRADER] SELL {coin} at {current_price:.4f} EUR (STOP-LOSS: {current_loss_pct:.2f}%)")
-                                                except Exception:
-                                                    pass
-                                    except Exception as e:
-                                        print(f"[TRADER] Error selling {coin} (stop-loss): {e}")
-                                    continue  # Skip resistance check if stop-loss triggered
+                                # NO STOP-LOSS: Spot trading philosophy - hold through dips, add more via DCA if needed
+                                # The DCA multiplier is large, so cost basis lowers significantly with each DCA
+                                # User prefers to add more money to account rather than realize losses
                                 
                                 # Profit-taking: Take 50% profit at +5%, rest at resistance
                                 current_profit_pct = ((current_price - avg_cost) / avg_cost) * 100 if avg_cost > 0 else 0

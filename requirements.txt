@@ -1,0 +1,8 @@
+requests
+psutil
+matplotlib
+colorama
+python-binance
+Pillow
+kucoin-python
+

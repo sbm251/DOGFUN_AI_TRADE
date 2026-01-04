@@ -16,7 +16,7 @@ from dataclasses import dataclass
 from typing import Any, Dict, List, Optional, Tuple
 import tkinter as tk
 import tkinter.font as tkfont
-from tkinter import ttk, filedialog, messagebox
+from tkinter import ttk, filedialog, messagebox, simpledialog
 from matplotlib.figure import Figure
 from matplotlib.backends.backend_tkagg import FigureCanvasTkAgg
 from matplotlib.patches import Rectangle
@@ -2532,6 +2532,19 @@ Supported by DogFun"""
             command=self.set_trade_amount
         )
         self.btn_set_trade_amount.pack(side="right", padx=(6, 0))
+        
+        # Trade Start Level setting (editable)
+        trade_start_level_row = ttk.Frame(acct_box)
+        trade_start_level_row.pack(fill="x", padx=6, pady=(2, 0))
+        self.lbl_acct_trade_start_level = ttk.Label(trade_start_level_row, text="Trade Start Level: N/A")
+        self.lbl_acct_trade_start_level.pack(side="left")
+        self.btn_set_trade_start_level = ttk.Button(
+            trade_start_level_row,
+            text="Set",
+            width=6,
+            command=self.set_trade_start_level
+        )
+        self.btn_set_trade_start_level.pack(side="right", padx=(6, 0))
 
         self.lbl_acct_percent_in_trade = ttk.Label(acct_box, text="Percent In Trade: N/A")
         self.lbl_acct_percent_in_trade.pack(anchor="w", padx=6, pady=(2, 0))
@@ -4029,10 +4042,16 @@ Supported by DogFun"""
                         settings = json.load(f)
                         trade_amount = settings.get("fixed_trade_amount", 6)
                         self.lbl_acct_trade_amount.config(text=f"Trade Amount: {trade_amount:.2f} EUR")
+                        
+                        # Update trade start level display
+                        trade_start_level = settings.get("trade_start_level", 2)
+                        self.lbl_acct_trade_start_level.config(text=f"Trade Start Level: {trade_start_level} blue lines")
                 else:
                     self.lbl_acct_trade_amount.config(text="Trade Amount: 6.00 EUR")
+                    self.lbl_acct_trade_start_level.config(text="Trade Start Level: 2 blue lines")
             except Exception:
                 self.lbl_acct_trade_amount.config(text="Trade Amount: N/A")
+                self.lbl_acct_trade_start_level.config(text="Trade Start Level: N/A")
 
             pit = acct.get("percent_in_trade", None)
             try:
@@ -5020,6 +5039,10 @@ Supported by DogFun"""
         add_row(r, "UI refresh seconds:", ui_refresh_var); r += 1
         add_row(r, "Chart refresh seconds:", chart_refresh_var); r += 1
         add_row(r, "Candles limit:", candles_limit_var); r += 1
+        
+        # Trade Start Level setting
+        trade_start_level_var = tk.StringVar(value=str(self.settings.get("trade_start_level", 2)))
+        add_row(r, "Trade Start Level (blue lines):", trade_start_level_var); r += 1
 
         chk = ttk.Checkbutton(frm, text="Auto start scripts on GUI launch", variable=auto_start_var)
         chk.grid(row=r, column=0, columnspan=3, sticky="w", pady=(10, 0)); r += 1
@@ -5044,6 +5067,7 @@ Supported by DogFun"""
                 self.settings["ui_refresh_seconds"] = float(ui_refresh_var.get().strip())
                 self.settings["chart_refresh_seconds"] = float(chart_refresh_var.get().strip())
                 self.settings["candles_limit"] = int(float(candles_limit_var.get().strip()))
+                self.settings["trade_start_level"] = int(float(trade_start_level_var.get().strip()))
                 self.settings["auto_start_scripts"] = bool(auto_start_var.get())
                 self._save_settings()
 
@@ -6013,6 +6037,78 @@ Supported by DogFun"""
                 
         except Exception as e:
             messagebox.showerror("Error", f"Failed to set trade amount:\n{str(e)}")
+            import traceback
+            traceback.print_exc()
+    
+    def set_trade_start_level(self) -> None:
+        """Set the Trade Start Level (how many blue lines price must be below)"""
+        try:
+            settings_path = os.path.join(self.project_dir, "gui_settings.json")
+            
+            # Get current value
+            current_level = 2
+            if os.path.exists(settings_path):
+                try:
+                    with open(settings_path, 'r', encoding='utf-8') as f:
+                        settings = json.load(f)
+                        current_level = int(settings.get("trade_start_level", 2))
+                except Exception:
+                    pass
+            
+            # Prompt user for new level
+            amount_str = simpledialog.askstring(
+                "Trade Start Level",
+                f"Enter how many blue lines the price must go below before a trade starts:\n\n"
+                f"Current: {current_level} blue lines\n"
+                f"Default: 2 blue lines\n\n"
+                f"Lower number = trades start sooner (more aggressive)\n"
+                f"Higher number = trades start later (more conservative)\n\n"
+                f"Recommended: 2-3",
+                initialvalue=str(current_level)
+            )
+            
+            if amount_str is None:
+                return  # User cancelled
+            
+            try:
+                new_level = int(float(amount_str))
+            except ValueError:
+                messagebox.showerror("Error", "Invalid number. Please enter a whole number (e.g., 2, 3, 4).")
+                return
+            
+            if new_level < 0:
+                messagebox.showerror("Error", "Trade start level must be 0 or greater.")
+                return
+            
+            if new_level > 10:
+                messagebox.showwarning("Warning", f"Trade start level of {new_level} is very high. This may prevent most trades from executing.")
+            
+            # Load settings, update, and save
+            settings = {}
+            if os.path.exists(settings_path):
+                try:
+                    with open(settings_path, 'r', encoding='utf-8') as f:
+                        settings = json.load(f)
+                except Exception:
+                    pass
+            
+            settings["trade_start_level"] = new_level
+            
+            try:
+                with open(settings_path, 'w', encoding='utf-8') as f:
+                    json.dump(settings, f, indent=2)
+                messagebox.showinfo(
+                    "Success",
+                    f"✅ Trade Start Level set to {new_level} blue lines\n\n"
+                    f"The trader will only start trades when the price is below at least {new_level} blue lines (LONG levels)."
+                )
+                # Update the display immediately
+                self.lbl_acct_trade_start_level.config(text=f"Trade Start Level: {new_level} blue lines")
+            except Exception as e:
+                messagebox.showerror("Error", f"Failed to save settings:\n{str(e)}")
+                
+        except Exception as e:
+            messagebox.showerror("Error", f"Failed to set trade start level:\n{str(e)}")
             import traceback
             traceback.print_exc()
     

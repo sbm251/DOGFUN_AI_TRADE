@@ -747,7 +747,11 @@ if __name__ == "__main__":
                                 for tok in raw.split():
                                     try:
                                         v = float(tok)
-                                        if v > 0 and v < 9e15:  # Filter sentinel values
+                                        # Filter placeholder/sentinel values:
+                                        # - 0.01 is a placeholder for inactive slots
+                                        # - 99999999999999999 is a placeholder for inactive slots
+                                        # - Values must be realistic price levels
+                                        if v > 0.1 and v < 9e15:  # Filter sentinel values (0.01 and 99999999999999999)
                                             low_levels.append(v)
                                     except Exception:
                                         pass
@@ -764,7 +768,11 @@ if __name__ == "__main__":
                                 for tok in raw.split():
                                     try:
                                         v = float(tok)
-                                        if v > 0 and v < 9e15:  # Filter sentinel values
+                                        # Filter placeholder/sentinel values:
+                                        # - 0.01 is a placeholder for inactive slots
+                                        # - 99999999999999999 is a placeholder for inactive slots
+                                        # - Values must be realistic price levels
+                                        if v > 0.1 and v < 9e15:  # Filter sentinel values (0.01 and 99999999999999999)
                                             high_levels.append(v)
                                     except Exception:
                                         pass

@@ -46,6 +46,4 @@ Always review the code, keep your keys private, and only trade with funds you ca
 
 ----------------------------------------------------------------
 
-**Original Author: Stephen Bryant Hughes
-Project Type: Open Source
-Status: Community-modified version (DOGFUN_AI_TRADE)**
+
